@@ -1,8 +1,11 @@
 mod tokenizer;
 mod parser;
+
+use std::io::{BufReader, Read, stdin};
+
 fn main() {
-    let input = r#"2 * 3 + 5"#;
-    let inputstream = input.as_bytes().to_vec().into_iter().map(|x| Ok(x));
+    let input = BufReader::new(stdin());
+    let inputstream = input.bytes();
     let tokenizer = tokenizer::Tokenizer::new(inputstream);
     let parser = parser::Parser::new(tokenizer.map(|tok| tok.unwrap()));
 
