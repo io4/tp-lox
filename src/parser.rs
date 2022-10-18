@@ -21,6 +21,7 @@ pub enum ParseError {
   InvalidTokenFound(LexingError),
   ExpectedButFound { expected: Token, found: Token },
   UnexpectedToken(Token),
+  ExpectedExpressionBut(Box<ParseError>),
   ExpectedIdentifierButFound(Token)
 }
 
@@ -47,7 +48,7 @@ impl<T: Iterator<Item = Result<Token, LexingError>>> Parser<T> {
   }
   pub fn parse_statement(&mut self) -> Result<ASTNode, ParseError> {
     let node = if self.is_next(Token::Print) {
-      self.consume();
+      self.consume()?;
       ASTNode::PrintStatement(Box::new(self.parse_expresion()?))
     } else {
       ASTNode::Statement(Box::new(self.parse_expresion()?))
@@ -57,11 +58,11 @@ impl<T: Iterator<Item = Result<Token, LexingError>>> Parser<T> {
   }
   pub fn parse_declaration(&mut self) -> Result<ASTNode, ParseError> {
     if self.is_next(Token::Var) {
-      self.consume();
+      self.consume()?;
 
       let name = self.consume_identifier()?;
       let value = if self.is_next(Token::Equal) {
-        self.consume();
+        self.consume()?;
         let expr = self.parse_expresion()?;
         self.consume_expecting(Token::Semicolon)?;
         Some(Box::new(expr))
@@ -75,9 +76,9 @@ impl<T: Iterator<Item = Result<Token, LexingError>>> Parser<T> {
   }
   pub fn parse_expresion(&mut self) -> Result<ASTNode, ParseError> {
     if self.is_next(Token::Semicolon) {
-      self.consume();
+      self.consume()?;
     }
-    self.parse_equality()
+    self.parse_equality().map_err(|err| ParseError::ExpectedExpressionBut(Box::new(err)))
   }
   pub fn parse_equality(&mut self) -> Result<ASTNode, ParseError> {
     self.parse_binary(&mut |p| p.parse_comparison(), &|tok| tok.is_equality())
@@ -119,7 +120,7 @@ impl<T: Iterator<Item = Result<Token, LexingError>>> Parser<T> {
   }
   pub fn synchronize(&mut self) {
     while self.next_matches(&|tok| tok.is_synchronization_point()) {
-      self.consume();
+      let _ = self.consume();
     }
   }
   pub fn parse_binary(&mut self, parse_branch: &mut dyn FnMut(&mut Self) -> Result<ASTNode, ParseError>, is_needed_op: &dyn Fn(&Token) -> bool)
