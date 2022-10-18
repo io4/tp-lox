@@ -57,10 +57,25 @@ impl Token {
       _ => false
     }
   }
+  pub fn is_synchronization_point(&self) -> bool {
+    match self {
+      Self::Class => true,
+      Self::Fun => true,
+      Self::Var => true,
+      Self::For => true,
+      Self::If => true,
+      Self::While => true,
+      Self::Print => true,
+      Self::Return => true,
+      Self::Semicolon => true,
+      Self::Eof => true,
+      _ => false
+    }
+  }
 }
 
 #[derive(Debug)]
-pub enum SyntaxError {
+pub enum LexingError {
   UnexpectedCharacter { character: char },
   ReadError { error: Box<dyn std::error::Error> }
 }
@@ -83,7 +98,7 @@ impl<T: Iterator<Item = Result<u8, std::io::Error>>> Tokenizer<T> {
       eof: false
     }
   }
-  pub fn try_read_token(&mut self) -> Result<Token, SyntaxError> {
+  pub fn try_read_token(&mut self) -> Result<Token, LexingError> {
     match self.consume() {
       None => {
         self.eof = true;
@@ -130,7 +145,7 @@ impl<T: Iterator<Item = Result<u8, std::io::Error>>> Tokenizer<T> {
             s.push(char);
           }
         }
-        Err(SyntaxError::UnexpectedCharacter { character: self.current })
+        Err(LexingError::UnexpectedCharacter { character: self.current })
       },
       c if c.is_digit(10) => Ok(self.scan_digit()),
       c if c.is_alphanumeric() => Ok(self.scan_identifier()),
@@ -138,14 +153,14 @@ impl<T: Iterator<Item = Result<u8, std::io::Error>>> Tokenizer<T> {
         return self.try_read_token() // skip whitespace
       },
       _ => { 
-        Err(SyntaxError::UnexpectedCharacter { character: self.current })
+        Err(LexingError::UnexpectedCharacter { character: self.current })
       }
     }
   }
-  fn consume(&mut self) -> Option<Result<char, SyntaxError>>{
+  fn consume(&mut self) -> Option<Result<char, LexingError>>{
     let char = self.stream.next()?;
     if let Err(err) = char {
-      return Some(Err(SyntaxError::ReadError { error: Box::new(err) }))
+      return Some(Err(LexingError::ReadError { error: Box::new(err) }))
     }
     self.col += 1;
     if self.current == '\n' {
@@ -155,19 +170,27 @@ impl<T: Iterator<Item = Result<u8, std::io::Error>>> Tokenizer<T> {
     self.current = char.unwrap() as char;
     Some(Ok(self.current))
   }
-  fn is_next(&mut self, c: char) -> bool {
+  fn peek(&mut self) -> Option<char> {
     let next = self.stream.peek();
-    if let Some(Ok(next)) = next {
-      return *next as char == c;
+    if let Some(Ok(c)) = next {
+      return Some(*c as char);
+    }
+    return None
+  }
+  fn is_next(&mut self, c: char) -> bool {
+    let next = self.peek();
+    if let Some(next) = next {
+      return next == c;
     }
     return false
   }
   fn scan_digit(&mut self) -> Token {
     let mut s = "".to_string();
     s.push(self.current);
-    while let Some(Ok(char)) = self.consume() {
+    while let Some(char) = self.peek() {
       if char.is_digit(10) || char == '.' {
         s.push(char);
+        self.consume();
       } else {
         break;
       };
@@ -177,9 +200,10 @@ impl<T: Iterator<Item = Result<u8, std::io::Error>>> Tokenizer<T> {
   fn scan_identifier(&mut self) -> Token {
     let mut s = "".to_string();
     s.push(self.current);
-    while let Some(Ok(char)) = self.consume() {
+    while let Some(char) = self.peek() {
       if char.is_alphanumeric() {
         s.push(char);
+        self.consume();
       } else {
         break;
       }
@@ -207,7 +231,7 @@ impl<T: Iterator<Item = Result<u8, std::io::Error>>> Tokenizer<T> {
 }
 
 impl<T: Iterator<Item = Result<u8, std::io::Error>>> Iterator for Tokenizer<T> {
-  type Item = Result<Token, SyntaxError>;
+  type Item = Result<Token, LexingError>;
 
   fn next(&mut self) -> Option<Self::Item> {
     if self.eof {
